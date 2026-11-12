@@ -1,0 +1,50 @@
+# Dependencies
+/node_modules
+
+# Next.js build output
+/.next
+/out
+
+# Production output
+/build
+
+# Local environment files (examples remain tracked)
+.env*
+!.env.example
+
+# Debug logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Test and coverage output
+/coverage
+
+# Editors and operating systems
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.pem
+*.key
+*.p12
+*.pfx
+*.token
+secrets.*
+.npmrc
+
+# TypeScript
+*.tsbuildinfo
+next-env.d.ts
+
+# Vercel
+.vercel
+
+# Codex task scratch and delivery directories
+/AGENTS.md
+/.agents/
+/.codex/
+/work
+/outputs
