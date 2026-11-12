@@ -63,7 +63,7 @@ Open [http://localhost:3000](http://localhost:3000).
 | `PAYPAL_API_BASE` | Must remain `https://api-m.sandbox.paypal.com` |
 | `PAYPAL_SANDBOX_MERCHANT_EMAIL` | Email of the sandbox Business account associated with the OAuth app |
 | `GEMINI_API_KEY` | Server-only Gemini Developer API key |
-| `GEMINI_MODEL` | Structured-output model; defaults to `gemini-3.8-flash` |
+| `GEMINI_MODEL` | Structured-output model; defaults to `gemini-2.5-flash` |
 
 Never commit `.env.local`, paste credentials into issues or chat, or use live PayPal credentials in this project.
 
