@@ -14,6 +14,12 @@ type PayPalSafeDiagnostics = {
   providerIssue?: string;
   debugId?: string;
 };
+export type PayPalTransportDiagnostics = {
+  errorType: string;
+  category: "dns" | "tls" | "timeout" | "connection_reset" | "connection_refused" | "socket" | "network";
+  code?: string;
+  errno?: string | number;
+};
 
 const paypalEnvironmentSchema = z.object({
   PAYPAL_CLIENT_ID: z.string().min(1),
@@ -31,6 +37,7 @@ export class PayPalIntegrationError extends Error {
     public readonly providerCode?: string,
     public readonly providerIssue?: string,
     public readonly debugId?: string,
+    public readonly transport?: PayPalTransportDiagnostics,
   ) {
     super(message);
     this.name = "PayPalIntegrationError";
@@ -60,6 +67,28 @@ function safeDiagnostic(value: unknown): string | undefined {
   return typeof value === "string" && /^[A-Za-z0-9_.:-]{1,100}$/.test(value) ? value : undefined;
 }
 
+function safeErrno(value: unknown): string | number | undefined {
+  if (typeof value === "number" && Number.isSafeInteger(value)) return value;
+  return safeDiagnostic(value);
+}
+
+export function extractTransportDiagnostics(error: unknown): PayPalTransportDiagnostics {
+  const outer = error && typeof error === "object" ? error as Record<string, unknown> : {};
+  const cause = outer.cause && typeof outer.cause === "object" ? outer.cause as Record<string, unknown> : {};
+  const errorType = safeDiagnostic(outer.name) ?? "Error";
+  const code = safeDiagnostic(cause.code);
+  const errno = safeErrno(cause.errno);
+  const normalized = (code ?? "").toUpperCase();
+  const category: PayPalTransportDiagnostics["category"] =
+    errorType === "TimeoutError" || errorType === "AbortError" || normalized === "ETIMEDOUT" || normalized === "UND_ERR_CONNECT_TIMEOUT" ? "timeout" :
+      normalized === "ENOTFOUND" || normalized === "EAI_AGAIN" ? "dns" :
+        normalized === "ECONNRESET" ? "connection_reset" :
+          normalized === "ECONNREFUSED" ? "connection_refused" :
+            normalized.startsWith("ERR_TLS") || normalized.includes("CERT") || normalized.includes("SSL") || normalized.includes("VERIFY") || normalized.includes("SIGNATURE") ? "tls" :
+              normalized === "EPIPE" || normalized.startsWith("UND_ERR_SOCKET") ? "socket" : "network";
+  return { errorType, category, code, errno };
+}
+
 function extractPayPalDiagnostics(body: unknown, headers: Headers): PayPalSafeDiagnostics {
   if (!body || typeof body !== "object") {
     return { debugId: safeDiagnostic(headers.get("paypal-debug-id")) };
@@ -86,8 +115,17 @@ export async function getPayPalAccessToken(fetcher: Fetcher = fetch): Promise<st
       body: "grant_type=client_credentials",
       cache: "no-store",
     });
-  } catch {
-    throw new PayPalIntegrationError("PayPal authentication could not be reached.", "authentication");
+  } catch (error) {
+    throw new PayPalIntegrationError(
+      "PayPal authentication could not be reached.",
+      "authentication",
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      extractTransportDiagnostics(error),
+    );
   }
   const body = await readJson(response);
   if (!response.ok) {
@@ -164,8 +202,17 @@ export async function createPayPalDraftInvoice(
       body: JSON.stringify(payload),
       cache: "no-store",
     });
-  } catch {
-    throw new PayPalIntegrationError("The PayPal creation outcome is uncertain. Do not submit this invoice again until the sandbox account is checked.", "uncertain");
+  } catch (error) {
+    throw new PayPalIntegrationError(
+      "The PayPal creation outcome is uncertain. Do not submit this invoice again until the sandbox account is checked.",
+      "uncertain",
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      extractTransportDiagnostics(error),
+    );
   }
   const createBody = await readJson(createResponse);
   if (createResponse.status !== 201) {
@@ -189,8 +236,17 @@ export async function createPayPalDraftInvoice(
     detailsResponse = await fetchWithTimeout(fetcher, `${environment.PAYPAL_API_BASE}/v2/invoicing/invoices/${encodeURIComponent(invoiceId)}`, {
       method: "GET", headers: { Accept: "application/json", Authorization: `Bearer ${accessToken}` }, cache: "no-store",
     });
-  } catch {
-    throw new PayPalIntegrationError("The draft was created, but PayPal status verification failed.", "verification", undefined, invoiceId);
+  } catch (error) {
+    throw new PayPalIntegrationError(
+      "The draft was created, but PayPal status verification failed.",
+      "verification",
+      undefined,
+      invoiceId,
+      undefined,
+      undefined,
+      undefined,
+      extractTransportDiagnostics(error),
+    );
   }
   const details = paypalInvoiceDetailsSchema.safeParse(await readJson(detailsResponse));
   if (!detailsResponse.ok || !details.success || details.data.id !== invoiceId || details.data.status !== "DRAFT") {

@@ -16,6 +16,10 @@ function safePayPalDiagnostics(error: PayPalIntegrationError): Record<string, st
     paypalError: error.providerCode,
     paypalIssue: error.providerIssue,
     paypalDebugId: error.debugId,
+    transportErrorType: error.transport?.errorType,
+    transportCategory: error.transport?.category,
+    transportCode: error.transport?.code,
+    transportErrno: error.transport?.errno,
   }).filter((entry): entry is [string, string | number] => entry[1] !== undefined));
 }
 

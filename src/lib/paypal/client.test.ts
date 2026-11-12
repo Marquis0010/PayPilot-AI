@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
 
 import { invoiceCreateRequestSchema, SingleFlightRegistry } from "@/lib/invoice/creation";
-import { createPayPalDraftFromInvoice, PayPalIntegrationError } from "@/lib/paypal/client";
+import { createPayPalDraftFromInvoice, extractTransportDiagnostics, getPayPalAccessToken, PayPalIntegrationError } from "@/lib/paypal/client";
 
 const requestId = "11111111-1111-4111-8111-111111111111";
 const invoice = {
@@ -45,6 +45,34 @@ describe("approved invoice creation request", () => {
 });
 
 describe("PayPal sandbox draft execution", () => {
+  it("classifies certificate-chain verification failures as TLS errors", () => {
+    const cause = Object.assign(new Error("certificate verification failed"), { code: "UNABLE_TO_VERIFY_LEAF_SIGNATURE" });
+    const networkError = new TypeError("fetch failed", { cause });
+
+    expect(extractTransportDiagnostics(networkError)).toEqual({
+      errorType: "TypeError",
+      category: "tls",
+      code: "UNABLE_TO_VERIFY_LEAF_SIGNATURE",
+      errno: undefined,
+    });
+  });
+
+  it("preserves sanitized OAuth transport diagnostics", async () => {
+    const cause = Object.assign(new Error("getaddrinfo failed"), { code: "ENOTFOUND", errno: -3008 });
+    const networkError = new TypeError("fetch failed", { cause });
+    const fetcher = vi.fn().mockRejectedValue(networkError) as unknown as typeof fetch;
+
+    await expect(getPayPalAccessToken(fetcher)).rejects.toMatchObject<Partial<PayPalIntegrationError>>({
+      kind: "authentication",
+      transport: {
+        errorType: "TypeError",
+        category: "dns",
+        code: "ENOTFOUND",
+        errno: -3008,
+      },
+    });
+  });
+
   it("categorizes PayPal authentication failure", async () => {
     const fetcher = mockFetch(new Response("{}", { status: 401 }));
     await expect(createPayPalDraftFromInvoice(draft, { explicitlyApproved: true, requestId, fetcher }))
